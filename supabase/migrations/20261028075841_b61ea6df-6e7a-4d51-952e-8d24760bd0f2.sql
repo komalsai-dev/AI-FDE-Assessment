@@ -1,0 +1,2 @@
+CREATE POLICY "Internal receipts are not browser accessible" ON public.action_receipts FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+CREATE POLICY "Internal generation markers are not browser accessible" ON public.generation_step_receipts FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
