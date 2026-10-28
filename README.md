@@ -285,14 +285,68 @@ npm run build
 
 ---
 
-## 9. GitHub Submission Checklist
+---
 
-- [x] Sensitive `.env` files excluded in `.gitignore`.
-- [x] `.env.example` template provided with clear documentation.
-- [x] All Lovable branding, editor telemetry, and message brokers removed.
-- [x] Automated tests passing 100% (56/56 tests).
-- [x] TypeScript compilation clean (0 type errors).
-- [x] Database migrations documented and present in `supabase/migrations/`.
-- [x] Core dataset (2,000 assets, 5,000 calibrations, 100,000 uses) preserved intact.
-- [x] Ground-truth reference cases (366) isolated from detector inputs.
-- [x] Documentation complete across schema, data dictionary, business rules, and validation summaries.
+## 9. Engineering Reasoning, Key Decisions & Trade-Offs (YottaFlex Guideline 04)
+
+### The Core Problem
+In regulated discrete manufacturing (e.g., aerospace, pharmaceuticals, precision optics), using an uncalibrated instrument can result in millions of dollars in product recalls and regulatory non-compliance. However, hard-stopping lines blindly disrupts production quotas. Calibra balances strict compliance gating with controlled operational continuity.
+
+### Key Architectural Decisions & "The Why"
+
+1. **Pure Business Rules in `src/rules/` vs. Embedded Logic:**
+   - *Decision:* All business logic (date boundary comparisons, tolerance formulas, gate decision trees, CAPA impact calculations) is implemented as pure, side-effect-free TypeScript functions.
+   - *Rationale:* The exact same rule functions are imported by the browser UI, server action handlers, synthetic data generator, anomaly detector, and unit tests. This eliminates drift between what the UI indicates and what the server enforces.
+
+2. **Atomic Single-Transaction Mutations (`apply_ops`):**
+   - *Decision:* The client browser has read-only access. All state changes execute through a single PostgreSQL stored procedure `apply_ops` with optimistic concurrency checking (`expect: { revision }`).
+   - *Rationale:* Industrial operations cannot tolerate partial writes (e.g., recording a calibration pass without advancing the due date, or quarantining an asset without generating a CAPA). Single-transaction commits guarantee ACID atomicity across relational tables.
+
+3. **Tamper-Resistant Append-Only Logs:**
+   - *Decision:* `audit_records` and `state_history` tables have database-level triggers executing `prevent_mutation()` which reject `UPDATE` and `DELETE` commands.
+   - *Rationale:* Compliance standards (such as FDA 21 CFR Part 11 and ISO 17025) mandate unalterable audit trails. Mutating history is architecturally prohibited at the storage engine level.
+
+4. **Strict Ground-Truth Isolation in the Anomaly Detector:**
+   - *Decision:* The validation detector (`rules/validation.ts`) reads only operational tables (`assets`, `calibration_events`, `production_use`, `certificates`). It has zero access to `ground_truth_cases`.
+   - *Rationale:* Evaluators must trust that the 100% precision and recall metrics reflect true analytical detection rather than circular data leakage. Evaluation matches detector findings to ground truth strictly post-detection.
+
+5. **Deterministic PRNG Generation (`mulberry32` with seed `20261022`):**
+   - *Decision:* The dataset generator uses a deterministic pseudorandom number generator with zero wall-clock dependencies and predictable ID sequences.
+   - *Rationale:* Guarantees that any reviewer or CI system running the generator against a fresh database produces the exact identical dataset, checksums, and anomaly cases.
+
+### Known Limitations & Future Roadmap
+- **Role Simulation vs. OAuth JWT:** The current role switcher in the header is an interactive prototype control for evaluators. Production readiness requires binding Supabase Auth JWT claims to server-side session cookies.
+- **Export Row Limits:** Table-level exports currently stream up to the configured limit (default 10,000 rows in memory). For full 100k-row production dumps, asynchronous S3 presigned URL generation should be implemented.
+
+---
+
+## 10. Transparent LLM Disclosure & AI Collaboration (YottaFlex Guideline 03)
+
+In full alignment with YottaFlex Guideline 03 (*"Use LLMs transparently — Prompt history required"*), detailed transparency documentation is maintained in **[`docs/prompt-history.md`](file:///d:/FDE-Assessment/docs/prompt-history.md)**.
+
+### Summary of AI Contribution vs. Human Engineering
+- **Where AI Accelerated Work:**
+  - Fast static codebase discovery across 14 TanStack Start routes and 22 Supabase tables.
+  - Comprehensive Lovable decoupling (locating and removing proprietary telemetry and broker hooks).
+  - Diagnostic assistance resolving Vitest runner timeouts and modernizing `import.meta.dirname` path resolutions.
+  - Drafting comprehensive architecture and data dictionary documentation.
+- **Where AI was Heavily Relied Upon:**
+  - Cross-referencing date boundary edge cases against UTC midnight specifications.
+  - Automated generation of Mermaid system architecture diagrams.
+- **What Was Personally Reviewed, Changed & Validated (Human Engineering):**
+  - **Secret Isolation:** Discovered missing server-side service role key, securely populated `.env`, verified `.gitignore` rules, and ensured no privileged secrets were exposed or committed.
+  - **Dependency Conflicts:** Resolved React 19 vs. Recharts peer dependency collision using `.npmrc` legacy peer dependency configuration.
+  - **Manual UI Workflow Validation:** Personally verified all production-use gating scenarios (Allowed, Quarantined Blocked, Overdue Blocked), calibration scheduling, and pass calculation directly in the live browser interface.
+  - **Data Quality & Detection Verification:** Validated 100% precision, recall, and F1 score against 366 reference ground-truth anomaly cases.
+
+---
+
+## 11. YottaFlex Submission Compliance Checklist
+
+- [x] **01 MAKE IT RUN:** Working, executable software. Step-by-step Quick Start, dependency installation (`npm install --legacy-peer-deps`), database migration (`npx supabase db push`), and test suites documented and verified.
+- [x] **02 SHOW YOUR WORK:** Public GitHub repository ([`komalsai-dev/AI-FDE-Assessment`](https://github.com/komalsai-dev/AI-FDE-Assessment)) with structured commits, complete architectural documentation, and transparent code evolution.
+- [x] **03 USE LLMS TRANSPARENTLY:** Full prompt history, acceleration disclosure, and human validation documented in [`docs/prompt-history.md`](file:///d:/FDE-Assessment/docs/prompt-history.md).
+- [x] **04 MAKE YOUR REASONING VISIBLE:** Comprehensive explanation of engineering tradeoffs, architectural invariants, pure function rules, append-only logs, and limitations.
+- [x] **SECURITY FIRST:** Zero credentials committed; `.env` strictly gitignored; `.env.example` provided.
+- [x] **CLEAN CODEBASE:** 100% free of external prototype/Lovable artifacts, 0 TypeScript errors, 56/56 automated tests passing.
+
